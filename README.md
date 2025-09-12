@@ -1,20 +1,26 @@
-# Reference Application for LaunchDarkly to Databricks Integration via S3
+# LaunchDarkly Experiment Data Export to S3
 
-This project demonstrates how to send LaunchDarkly experiment evaluation data to AWS S3 using Kinesis Firehose, from where Databricks can load the data using Auto Loader.
+This project demonstrates how to export LaunchDarkly experiment evaluation data to AWS S3 using Kinesis Firehose. The data can then be consumed by analytics platforms like Databricks.
 
 ## Overview
 
-The integration captures experiment evaluation events from LaunchDarkly's Python SDK using hooks and streams them to S3 in real-time. This enables:
+This project focuses on the **S3 export** portion of the data pipeline. It captures experiment evaluation events from LaunchDarkly's Python SDK using hooks and streams them to S3 in real-time.
 
-- **Real-time experiment data streaming** to S3
-- **Databricks integration** via Auto Loader
-- **Flexible context parsing** for different context types
-- **Partitioned data storage** for efficient querying
+**What this project provides:**
+- ✅ **Real-time experiment data streaming** to S3
+- ✅ **Flexible context parsing** for different context types  
+- ✅ **Partitioned data storage** for efficient querying
+- ✅ **Complete working example** with setup automation
+
+**What you need to configure separately:**
+- ⚠️ **Import from S3 to your analytics platform** (see DATABRICKS_INTEGRATION.md for guidance on Databrics)
 
 ## Architecture
 
 ```
-LaunchDarkly SDK → Python Hook → Kinesis Firehose → S3 → Databricks Auto Loader
+LaunchDarkly SDK → Python Hook → Kinesis Firehose → S3
+                                                      ↓
+                                              [Your Analytics Platform]
 ```
 
 ## Prerequisites
@@ -27,6 +33,7 @@ LaunchDarkly SDK → Python Hook → Kinesis Firehose → S3 → Databricks Auto
   - SDK key
   - Feature flags with experiments enabled
 - **Python 3.9+** with Poetry
+- **Analytics Platform** (Databricks, Snowflake, etc.) - not included in this project
 
 ## Quick Start
 
@@ -187,22 +194,27 @@ Each event contains:
 }
 ```
 
-## Databricks Integration
+## Next Steps: Analytics Platform Integration
 
-For detailed Databricks integration guidance, see [DATABRICKS_INTEGRATION.md](DATABRICKS_INTEGRATION.md).
+Once your data is flowing to S3, you'll need to configure your analytics platform to consume it.
 
-### Quick Start
+### For Databricks Users
 
-1. **Use Auto Loader** to read streaming data from S3
-2. **Process experiment data** with Spark SQL
-3. **Store in Delta tables** for efficient querying
-4. **Analyze results** with SQL queries
-
-The integration guide includes:
+See [DATABRICKS_INTEGRATION.md](DATABRICKS_INTEGRATION.md) for guidance on:
 - Auto Loader configuration
-- Sample analysis queries
+- Sample analysis queries  
 - Performance optimization tips
 - Troubleshooting guidance
+
+**Note**: The Databricks integration guide is provided as a starting point and has not been tested. Please verify and adapt the configuration for your environment.
+
+### For Other Platforms
+
+The S3 data is stored in a standard JSON format that can be consumed by:
+- **Snowflake** - Use external tables or COPY commands
+- **BigQuery** - Use external data sources
+- **Athena** - Query directly from S3
+- **Custom applications** - Use AWS SDKs to read the JSON files
 
 ## Configuration Options
 
