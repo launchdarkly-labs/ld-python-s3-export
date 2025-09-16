@@ -10,7 +10,7 @@ This integration guide is provided as a starting point and has not been tested i
 
 The LaunchDarkly experiment data is stored in S3 with the following structure:
 ```
-s3://your-bucket/experiments/year=2024/month=01/day=15/experiment-data.json
+s3://your-bucket/experiments/year=2024/month=01/day=15//hour=hh/experiment-data.json
 ```
 
 Each JSON file contains one experiment event per line with this schema:
