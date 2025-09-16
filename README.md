@@ -1,16 +1,16 @@
 # LaunchDarkly Experiment Data Export to S3
 
-A reference implementation showing how to integrate LaunchDarkly experiment evaluation data with AWS S3 using Kinesis Firehose. This enables real-time streaming of experiment data to your analytics platform.
+A reference implementation showing how to integrate LaunchDarkly experiment evaluation data with AWS S3 using Kinesis Firehose. This ultimately enables real-time streaming of experiment data to your analytics platform.
+
+This project includes a simple setup leveraging AWS Firehose to stream data into an S3 bucket. The `setup.sh` file includes bash scripts that can be used to provision the necessary infrastructure in AWS. The resources are meant for reference and as a proof of concept, it's not intended as a production-ready implementation - your AWS instrumentation will likely be different.
+
+Importing data from the S3 bucket to your analytics platform of choice is not in scope of this project. That said, a high-level guidance on importing the data to Databricks can be found in `DATABRICKS_INTEGRATION.md`. Note this part was not tested.
 
 ## Overview
 
 - LD SDK is configured with a flag [after_evaluation hook](https://launchdarkly-python-sdk.readthedocs.io/en/latest/api-main.html#module-ldclient.hook)
 - The hook instatiates a FirehoseSender class at application start, a `boto3` client is created
 - When a flag is evaluated, the `boto3` client is used to send data to the selected AWS S3 bucket
-
-The project mainly focuses in configuring LaunchDarkly Python SDK so it generates analytics events capturing details about the evaluated flags, the variations that were served, and the context instances that were evaluated. This project includes a simple setup with AWS Firehose and S3 as the destination of those events. The project includes a `setup.sh` bash script that can be used to provision the necessary infrastructure in AWS. This is primarily meant for reference and as a proof of concept, it's not intended for production-ready implementation - your AWS instrumentation will likely be different.
-
-Importing data from the S3 bucket to your analytics platform of choice is not in scope of this project. That said, a high-level guidance on importing the data to Databricks can be found in `DATABRICKS_INTEGRATION.md`. Note this part was not tested.
 
 ## Architecture
 
