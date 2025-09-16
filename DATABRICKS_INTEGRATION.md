@@ -2,7 +2,7 @@
 
 This guide provides general guidance for integrating LaunchDarkly experiment data with Databricks using Auto Loader.
 
-## ⚠️ Important Note
+## Important Note
 
 This integration guide is provided as a starting point and has not been tested in a live Databricks environment. Please test thoroughly and adapt the queries to your specific setup before using in production.
 
@@ -26,6 +26,7 @@ Each JSON file contains one experiment event per line with this schema:
   },
   "flag_value": "treatment",
   "variation_index": 1,
+  "reason_kind": "FALLTHROUGH",
   "metadata": {
     "source": "launchdarkly-python-hook",
     "version": "1.0"
@@ -198,7 +199,7 @@ ORDER BY flag_key, flag_value, user_tier;
 
 ### Partitioning Strategy
 
-The S3 data is already partitioned by date (`year=YYYY/month=MM/day=DD`). For better query performance:
+The S3 data is already partitioned by date and hour (`year=YYYY/month=MM/day=DD/hour=HH`). For better query performance:
 
 1. **Use partition pruning** in your queries
 2. **Consider additional partitioning** by `flag_key` if you have many flags
