@@ -1,19 +1,16 @@
 # LaunchDarkly Experiment Data Export to S3
 
-This project demonstrates how to export LaunchDarkly experiment evaluation data to AWS S3 using Kinesis Firehose. The data can then be consumed by analytics platforms like Databricks.
+A reference implementation showing how to integrate LaunchDarkly experiment evaluation data with AWS S3 using Kinesis Firehose. This enables real-time streaming of experiment data to your analytics platform.
 
 ## Overview
 
-This project focuses on the **S3 export** portion of the data pipeline. It captures experiment evaluation events from LaunchDarkly's Python SDK using hooks and streams them to S3 in real-time.
+- LD SDK is configured with a flag [after_evaluation hook](https://launchdarkly-python-sdk.readthedocs.io/en/latest/api-main.html#module-ldclient.hook)
+- The hook instatiates a FirehoseSender class at application start, a `boto3` client is created
+- When a flag is evaluated, the `boto3` client is used to send data to the selected AWS S3 bucket
 
-**What this project provides:**
-- ✅ **Real-time experiment data streaming** to S3
-- ✅ **Flexible context parsing** for different context types  
-- ✅ **Partitioned data storage** for efficient querying
-- ✅ **Complete working example** with setup automation
+The project mainly focuses in configuring LaunchDarkly Python SDK so it generates analytics events capturing details about the evaluated flags, the variations that were served, and the context instances that were evaluated. This project includes a simple setup with AWS Firehose and S3 as the destination of those events. The project includes a `setup.sh` bash script that can be used to provision the necessary infrastructure in AWS. This is primarily meant for reference and as a proof of concept, it's not intended for production-ready implementation - your AWS instrumentation will likely be different.
 
-**What you need to configure separately:**
-- ⚠️ **Import from S3 to your analytics platform** (see DATABRICKS_INTEGRATION.md for guidance on Databrics)
+Importing data from the S3 bucket to your analytics platform of choice is not in scope of this project. That said, a high-level guidance on importing the data to Databricks can be found in `DATABRICKS_INTEGRATION.md`. Note this part was not tested.
 
 ## Architecture
 
@@ -33,11 +30,92 @@ LaunchDarkly SDK → Python Hook → Kinesis Firehose → S3
   - SDK key
   - Feature flags with experiments enabled
 - **Python 3.9+** with Poetry
-- **Analytics Platform** (Databricks, Snowflake, etc.) - not included in this project
 
-## Quick Start
+## Step-by-step Guide
 
-### 1. Clone and Setup
+### 1. Define a class that will be used by the flag evaluation hook
+
+```python
+class FlagEvaluationHook(Hook):
+    def __init__(self):
+        # Initialize Firehose sender
+        try:
+            self.firehose_sender = FirehoseSender()
+            print("Firehose sender initialized successfully")
+        except Exception as e:
+            print(f"Failed to initialize Firehose sender: {e}")
+            self.firehose_sender = None
+    
+    @property
+    def metadata(self) -> Metadata:
+        return Metadata(name="flag-evaluation-hook")
+
+    def after_evaluation(self, evaluation_context, data, evaluation_detail):
+        """
+        Hook method called after every flag evaluation.
+        """
+        # Check if the user is in an experiment looking at the evaluation_detail > reason > inExperiment
+        if (evaluation_detail.reason and 
+            'inExperiment' in evaluation_detail.reason and 
+            evaluation_detail.reason['inExperiment']):
+            
+            # Send experiment event to Firehose
+            if self.firehose_sender:
+                success = self.firehose_sender.send_experiment_event(evaluation_context, evaluation_detail)
+                if success:
+                    print(f"Successfully sent experiment event to Firehose")
+                else:
+                    print(f"Failed to send experiment event to Firehose")
+            else:
+                print(f"Firehose sender not available - skipping event send")
+        else:
+            print(f"User is not in an experiment for flag {evaluation_context.key}")
+        
+        return data
+```
+
+### 2. Add `after_evaluation` hook to your LD SDK config: 
+
+```python
+example_analytics_hook = FlagEvaluationHook()
+ldclient.set_config(Config(sdk_key, hooks=[example_analytics_hook]))
+```
+
+### 3. Send the evaluation details to AWS S3
+
+Inside the FirehoseSender class, initialize the AWS Firehose client (boto3), compose the analytics event, and send it to AWS S3. An example event payload:
+
+```python
+def send_experiment_event(self, evaluation_context, evaluation_detail):
+        """
+        Send experiment evaluation event to Firehose
+        
+        Args:
+            evaluation_context: Contextual information that will be provided to handlers during evaluation series.
+            evaluation_detail: The result of a flag evaluation with information about how it was calculated.
+        """
+        # Prepare the event data
+        event_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "flag_key": evaluation_context.key,
+            "evaluation_context": self._extract_context_data(evaluation_context.context),
+            "flag_value": evaluation_detail.value,
+            "variation_index": getattr(evaluation_detail, 'variation_index', None),
+            "reason_kind": evaluation_detail.reason.get('kind') if evaluation_detail.reason else None,
+            "metadata": {
+                "source": "launchdarkly-python-hook",
+                "version": "1.0"
+            }
+        }
+```
+
+For a full working example, check the [firehose_sender file](firehose_sender.py).
+
+## Demo: Testing the Integration
+
+This section shows how to test the integration locally. For production use, integrate the hook code into your existing application.
+
+### Quick Test Setup
 
 ```bash
 git clone <repository-url>
@@ -45,7 +123,7 @@ cd hello-python
 poetry install
 ```
 
-### 2. Configure Environment
+### Configure Environment
 
 ```bash
 cp env.example .env
@@ -62,12 +140,42 @@ LAUNCHDARKLY_FLAG_KEY=your-feature-flag-key
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your-aws-access-key
 AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+AWS_SESSION_TOKEN=your-aws-session-token # Only required when using temporary credentials (such as SSO); leave empty when using permanent IAM user credentials
 
 # Kinesis Firehose Configuration
 FIREHOSE_STREAM_NAME=launchdarkly-experiments-stream
 ```
 
-### 3. Setup AWS Resources
+### AWS Authentication Options
+
+**Option 1: Temporary Credentials (SSO, STS, IAM Roles)**
+- Include `AWS_SESSION_TOKEN` in your `.env` file
+- Get credentials from AWS Console or `aws sso login`
+- Credentials expire and need to be refreshed
+
+**Option 2: Permanent IAM User Credentials**
+- Create IAM user with programmatic access
+- Use only `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+- Leave `AWS_SESSION_TOKEN` empty
+- Credentials don't expire (unless rotated)
+
+### Automated AWS Resource Setup
+
+Use the provided setup script to create all required AWS resources:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+This creates:
+- S3 bucket for experiment data
+- IAM role for Firehose with S3 permissions
+- Kinesis Firehose delivery stream with partitioning
+
+### Manual AWS Resource Setup
+
+If you prefer to create resources manually or integrate with existing infrastructure:
 
 #### Create S3 Bucket
 ```bash
@@ -147,12 +255,12 @@ aws firehose create-delivery-stream \
   --delivery-stream-name launchdarkly-experiments-stream \
   --delivery-stream-type DirectPut \
   --s3-destination-configuration \
-  "RoleARN=arn:aws:iam::${ACCOUNT_ID}:role/launchdarkly-firehose-role,BucketARN=arn:aws:s3:::your-launchdarkly-experiments-bucket,Prefix=experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/,ErrorOutputPrefix=errors/,BufferingHints={SizeInMBs=1,IntervalInSeconds=60},CompressionFormat=UNCOMPRESSED,EncryptionConfiguration={NoEncryptionConfig=NoEncryption}"
+  "RoleARN=arn:aws:iam::${ACCOUNT_ID}:role/launchdarkly-firehose-role,BucketARN=arn:aws:s3:::your-launchdarkly-experiments-bucket,Prefix=experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/,ErrorOutputPrefix=errors/,BufferingHints={SizeInMBs=1,IntervalInSeconds=60},CompressionFormat=GZIP,EncryptionConfiguration={NoEncryptionConfig=NoEncryption}"
 ```
 
-### 4. Run the Application
+### Test the Integration
 
-```bash
+    ```bash
 poetry run python main.py
 ```
 
@@ -165,13 +273,24 @@ s3://your-bucket/
 │   ├── year=2024/
 │   │   ├── month=01/
 │   │   │   ├── day=15/
-│   │   │   │   ├── 2024-01-15-14-00-00-abc123.json
-│   │   │   │   └── 2024-01-15-14-05-00-def456.json
+│   │   │   │   ├── hour=14/
+│   │   │   │   │   ├── launchdarkly-experiments-stream-1-2024-01-15-14-00-00-abc123.json.gz
+│   │   │   │   │   └── launchdarkly-experiments-stream-1-2024-01-15-14-05-00-def456.json.gz
+│   │   │   │   └── hour=15/
 │   │   │   └── day=16/
 │   │   └── month=02/
 │   └── errors/
-│       └── failed-records.json
+│       └── failed-records.json.gz
 ```
+
+**Note**: Data is partitioned by `year/month/day/hour` for efficient querying. The Firehose configuration uses dynamic partitioning: `experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/`
+
+**File Naming**: Files are automatically named by Kinesis Firehose using the pattern: `{stream-name}-{partition}-{timestamp}-{uuid}.gz` where:
+- `stream-name`: Your Firehose delivery stream name (e.g., `launchdarkly-experiments-stream`)
+- `partition`: Partition number (usually 1)
+- `timestamp`: `YYYY-MM-DD-HH-MM-SS` format
+- `uuid`: Unique identifier for the file
+- `.gz`: GZIP compression applied automatically
 
 ### Event Data Schema
 Each event contains:
@@ -187,6 +306,7 @@ Each event contains:
   },
   "flag_value": "treatment",
   "variation_index": 1,
+  "reason_kind": "FALLTHROUGH",
   "metadata": {
     "source": "launchdarkly-python-hook",
     "version": "1.0"
@@ -224,9 +344,9 @@ Adjust buffering settings in the Firehose configuration:
 - `IntervalInSeconds`: Buffer time (60-900 seconds)
 
 ### S3 Partitioning
-Modify the `Prefix` parameter for different partitioning:
+The default configuration uses hourly partitioning for optimal query performance. Modify the `Prefix` parameter for different partitioning:
+- **Hourly (Default)**: `experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/`
 - **Daily**: `experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/`
-- **Hourly**: `experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/`
 - **Monthly**: `experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/`
 
 ### Context Parsing
@@ -301,13 +421,6 @@ def send_experiment_event(self, evaluation_context, flag):
 - Implement S3 lifecycle policies for data retention
 - Consider data compression for large volumes
 - Monitor and optimize partition sizes
-
-## Support
-
-For issues with this integration:
-1. Check the troubleshooting section above
-2. Review AWS CloudWatch logs
-3. Verify LaunchDarkly hook configuration
 
 ## License
 

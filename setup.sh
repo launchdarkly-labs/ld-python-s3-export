@@ -101,7 +101,7 @@ aws firehose create-delivery-stream \
   --delivery-stream-name launchdarkly-experiments-stream \
   --delivery-stream-type DirectPut \
   --s3-destination-configuration \
-  "RoleARN=arn:aws:iam::${ACCOUNT_ID}:role/launchdarkly-firehose-role,BucketARN=arn:aws:s3:::$BUCKET_NAME,Prefix=experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/,ErrorOutputPrefix=errors/,BufferingHints={SizeInMBs=1,IntervalInSeconds=60},CompressionFormat=UNCOMPRESSED,EncryptionConfiguration={NoEncryptionConfig=NoEncryption}"
+  "RoleARN=arn:aws:iam::${ACCOUNT_ID}:role/launchdarkly-firehose-role,BucketARN=arn:aws:s3:::$BUCKET_NAME,Prefix=experiments/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/,ErrorOutputPrefix=errors/,BufferingHints={SizeInMBs=1,IntervalInSeconds=60},CompressionFormat=GZIP,EncryptionConfiguration={NoEncryptionConfig=NoEncryption}"
 
 echo "🧹 Cleaning up temporary files..."
 rm -f firehose-trust-policy.json firehose-s3-policy.json
@@ -112,6 +112,10 @@ echo "Next steps:"
 echo "1. Copy env.example to .env and fill in your credentials"
 echo "2. Set FIREHOSE_STREAM_NAME=launchdarkly-experiments-stream in .env"
 echo "3. Run: poetry run python main.py"
+echo ""
+echo "AWS Authentication Options:"
+echo "- Option 1: Use your current SSO credentials (include AWS_SESSION_TOKEN)"
+echo "- Option 2: Create IAM user with programmatic access (no session token needed)"
 echo ""
 echo "Your S3 bucket: s3://$BUCKET_NAME"
 echo "Your Firehose stream: launchdarkly-experiments-stream"

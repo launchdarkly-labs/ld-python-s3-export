@@ -63,29 +63,31 @@ class FlagEvaluationHook(Hook):
     def metadata(self) -> Metadata:
         return Metadata(name="flag-evaluation-hook")
 
-    def after_evaluation(self, evaluation_context, evaluation_detail, flag):
-        # This method is called after a flag evaluation
-        print(f"--------------------------------")
-        print(f"HOOK FIRED:")
-        
+    def after_evaluation(self, evaluation_context, data, evaluation_detail):
         """
         Hook method called after flag evaluation.
         Sends experiment data to Firehose if user is in an experiment.
         """
-        # Check if the user is in an experiment
-        if (flag.reason and 
-            'inExperiment' in flag.reason and 
-            flag.reason['inExperiment']):
-            # print(f"User is IN AN EXPERIMENT for flag {evaluation_context.key}!")
-            # print(f"Flag key: {evaluation_context.key}")
-            # print(f"Evaluation context: {evaluation_context.context}")
-            # print(f"Returned value: {flag.value}")
-            # print(f"Variation index: {flag.variation_index}")
+        print(f"--------------------------------")
+        print(f"HOOK FIRED:")
+        
+        # # Debug: Print all parameter contents
+        # print(f"evaluation_context type: {type(evaluation_context)}")
+        # print(f"evaluation_context content: {evaluation_context}")
+        # print(f"data type: {type(data)}")
+        # print(f"data content: {data}")
+        # print(f"evaluation_detail type: {type(evaluation_detail)}")
+        # print(f"evaluation_detail content: {evaluation_detail}")
+        
+        # Check if the user is in an experiment looking at the evaluation_detail > reason > inExperiment
+        if (evaluation_detail.reason and 
+            'inExperiment' in evaluation_detail.reason and 
+            evaluation_detail.reason['inExperiment']):
             
             print(f"Experiment detected for flag {evaluation_context.key} - sending to Firehose")
             # Send experiment event to Firehose
             if self.firehose_sender:
-                success = self.firehose_sender.send_experiment_event(evaluation_context, flag)
+                success = self.firehose_sender.send_experiment_event(evaluation_context, evaluation_detail)
                 if success:
                     print(f"Successfully sent experiment event to Firehose")
                 else:
@@ -96,7 +98,7 @@ class FlagEvaluationHook(Hook):
             print(f"User is NOT in an experiment for flag {evaluation_context.key}!")
         print(f"--------------------------------")
         
-        return evaluation_detail
+        return data
 
 example_analytics_hook = FlagEvaluationHook()
 

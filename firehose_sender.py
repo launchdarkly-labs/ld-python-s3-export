@@ -77,21 +77,22 @@ class FirehoseSender:
         except (TypeError, ValueError):
             return False
     
-    def send_experiment_event(self, evaluation_context, flag):
+    def send_experiment_event(self, evaluation_context, evaluation_detail):
         """
         Send experiment evaluation event to Firehose
         
         Args:
-            evaluation_context: LaunchDarkly evaluation context
-            flag: LaunchDarkly flag object
+            evaluation_context: Contextual information that will be provided to handlers during evaluation series.
+            evaluation_detail: The result of a flag evaluation with information about how it was calculated.
         """
         # Prepare the event data
         event_data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "flag_key": evaluation_context.key,
             "evaluation_context": self._extract_context_data(evaluation_context.context),
-            "flag_value": flag.value,
-            "variation_index": getattr(flag, 'variation_index', None),
+            "flag_value": evaluation_detail.value,
+            "variation_index": getattr(evaluation_detail, 'variation_index', None),
+            "reason_kind": evaluation_detail.reason.get('kind') if evaluation_detail.reason else None,
             "metadata": {
                 "source": "launchdarkly-python-hook",
                 "version": "1.0"
